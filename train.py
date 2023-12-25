@@ -31,7 +31,7 @@ BATCH_SIZE = round(320/20)
 INPUT_CHANNELS = 3
 PREDICT_RESIDUAL = False
 OPTIMIZE_PHYSICS = False
-PROB_PHYSICS = 0.1
+PROB_PHYSICS = 0.3
 SEQ_SIZE = None #8
 NORMALIZE = True
 
@@ -155,8 +155,6 @@ def epoch_trainer(data,loss_function,loss_function_aux=None,eval=True):
                 y = y[:,-1,:,:,:]
 
             if PREDICT_RESIDUAL: #Reconstruct when modelling for PREDICT_RESIDUAL
-                #if SEQ_SIZE != None: output = x + output
-                #else: output = bicubic(x)+output
                 output = bicubic(x)+output
             loss_train = loss_function(output,y,std)
             if (np.isnan(loss_train.item())): #TODO remove, for debugging

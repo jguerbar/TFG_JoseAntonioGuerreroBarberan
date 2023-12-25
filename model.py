@@ -8,37 +8,50 @@ import numpy as np
 import math
 device = torch.device("cuda")
 
-# v7labs.com/blog/image-super-resolution-guide
 class NaiveTransConv(nn.Module):    
 	def __init__(self, numInputChannels, deep_channels, kernel=2):
-		# call the parent constructor
 		super(NaiveTransConv, self).__init__()
-		#self.upsampling_layer = []
-		#self.deep_channels = deep_channels
-		#self.deep_channels.insert(0, numInputChannels)
-		#self.deep_channels.append(numInputChannels)
-          
 		self.convTrans1 = nn.ConvTranspose2d(in_channels=numInputChannels, out_channels=deep_channels, kernel_size=kernel, stride=kernel)
 		self.convTrans2 = nn.ConvTranspose2d(in_channels=deep_channels, out_channels=numInputChannels, kernel_size=kernel, stride=kernel)
-		#for i in range(1,len(self.deep_channels),1):
-		#	self.upsampling_layer.append(nn.ConvTranspose2d(in_channels=self.deep_channels[i-1], out_channels=self.deep_channels[i], kernel_size=kernel, stride=kernel))
-		#print(self.upsampling_layer)	
 	def forward(self,x):
 		x = self.convTrans1(x)
 		x = self.convTrans2(x)
 		return x
+class ED_UpsamplingModel(nn.Module):
+    def __init__(self,channels):
+        super(ED_UpsamplingModel, self).__init__()
+        self.norm = torch.nn.BatchNorm2d(num_features=channels)
+        # Input image size is (N, 3, H, W)
+        self.conv1 = nn.Conv2d(in_channels=channels, out_channels=128, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
+        
+        # Upsample by a factor of 2
+        self.upsample1 = nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=2, stride=2)
+        # Another convolutional layer
+        self.conv3 = nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, padding=1)
+        # Final upsample by a factor of 2 to achieve total 4x upsampling
+        self.upsample2 = nn.ConvTranspose2d(in_channels=64, out_channels=channels, kernel_size=2, stride=2)
+    def forward(self, x):
+        #x = self.norm(x)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = self.upsample1(x)
+        x = self.conv3(x)
+        x = self.upsample2(x)
+        return x
 
 class VDSR(nn.Module):
-	#Kim, Kwon Lee, Accurate Image SUper-Resolution Using Very Deep Convolutional Networks. Also SRCNN as reference
 	def __init__(self, numInputChannels, deep_channels, num_layers, scale_factor):
 		# call the parent constructor
 		super(VDSR, self).__init__()
 		self.upsample = nn.Upsample(scale_factor=scale_factor,mode='bicubic')
 		self.conv_first = nn.Conv2d(in_channels=numInputChannels, out_channels=deep_channels, kernel_size=3, padding=1)
+            
 		self.conv_middle = nn.ModuleList()
 		for _ in range(num_layers-1):
 			self.conv_middle.append(nn.Conv2d(in_channels=deep_channels, out_channels=deep_channels, kernel_size=3, padding=1)) 
 		self.conv_middle = nn.Sequential(*self.conv_middle)
+            
 		self.conv_last = nn.Conv2d(in_channels=deep_channels, out_channels=numInputChannels, kernel_size=3, padding=1)
 
 	def forward(self,x):
@@ -117,13 +130,9 @@ class SRCNN(nn.Module):
 		nn.init.normal_(self.reconstruction.weight.data, 0.0, 0.001)
 		nn.init.zeros_(self.reconstruction.bias.data)
 
-#Good info about comparison of different models
-#https://arxiv.org/pdf/1704.03915.pdf
 
-
-#https://arxiv.org/pdf/1609.05158.pdf
-		
 class ESPCN(nn.Module):
+    #https://arxiv.org/pdf/1609.05158.pdf
     def __init__(
             self,
             in_channels: int,
@@ -131,58 +140,36 @@ class ESPCN(nn.Module):
             channels: int,
             upscale_factor: int):
         super(ESPCN, self).__init__()
-        hidden_channels = channels // 2
+        self.hidden_channels = channels // 2
         out_channels = int(out_channels * (upscale_factor ** 2))
 
         # Feature mapping
         self.feature_maps = nn.Sequential(
             nn.Conv2d(in_channels, channels, 5, 1, 2),
             nn.Tanh(),
-            nn.Conv2d(channels, hidden_channels, 3, 1, 1),
+            nn.Conv2d(channels, self.hidden_channels, 3, 1, 1),
             nn.Tanh(),
         )
 
         # Sub-pixel convolution layer
-        self.sub_pixel = nn.Sequential(
-            nn.Conv2d(hidden_channels, out_channels, 3, 1, 1),
+        self.sub_pixel_conv = nn.Sequential(
+            nn.Conv2d(self.hidden_channels, out_channels, 3, 1, 1),
             nn.PixelShuffle(upscale_factor))
         self._initialize_weights()
     def forward(self, x):
         x = self.feature_maps(x)
-        x = self.sub_pixel(x)
+        x = self.sub_pixel_conv(x)
         return x
     def _initialize_weights(self):
         for module in self.modules():
             if isinstance(module, nn.Conv2d):
-                if module.in_channels == 32:
+                if module.in_channels == self.hidden_channels:
                     nn.init.normal_(module.weight.data,0.0,0.001)
                     nn.init.zeros_(module.bias.data)
                 else:
                     nn.init.normal_(module.weight.data,0.0,math.sqrt(2 / (module.out_channels * module.weight.data[0][0].numel())))
                     nn.init.zeros_(module.bias.data)      
 					
-class ED_UpsamplingModel(nn.Module):
-    def __init__(self,channels):
-        super(ED_UpsamplingModel, self).__init__()
-        self.norm = torch.nn.BatchNorm2d(num_features=channels)
-        # Input image size is (N, 3, H, W)
-        self.conv1 = nn.Conv2d(in_channels=channels, out_channels=128, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
-        
-        # Upsample by a factor of 2
-        self.upsample1 = nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=2, stride=2)
-        # Another convolutional layer
-        self.conv3 = nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, padding=1)
-        # Final upsample by a factor of 2 to achieve total 4x upsampling
-        self.upsample2 = nn.ConvTranspose2d(in_channels=64, out_channels=channels, kernel_size=2, stride=2)
-    def forward(self, x):
-        #x = self.norm(x)
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.upsample1(x)
-        x = self.conv3(x)
-        x = self.upsample2(x)
-        return x
 
 class ConvLSTM_cell(nn.Module):
     def __init__(self, input_dim, hidden_dim, kernel_size, bias=False):
