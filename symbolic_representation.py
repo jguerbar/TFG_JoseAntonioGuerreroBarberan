@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch
 warnings.filterwarnings('ignore') #TODO? 
 FITNESS_THRESHOLD = 1e-10
-MAX_DATA = 50000000#27433728 # Depends on the RAM
+MAX_DATA = 50000000
 
 class Node:
     def __init__(self, value, left=None, right=None):
@@ -49,7 +49,6 @@ def mutate(tree, mutation_rate=0.1):
             mutate(tree.left, mutation_rate)
         if tree.right != None:
             mutate(tree.right, mutation_rate)
-
 def crossover(parent1, parent2, crossover_rate=0.1):
     if random.random() < crossover_rate:
         # Randomly choose a node from each parent and swap
@@ -68,9 +67,6 @@ def get_all_nodes(tree):
     elif tree.right:
         nodes += get_all_nodes(tree.right)
     return nodes
-
-
-
 
 def print_tree(root):
     if not root:
@@ -157,9 +153,9 @@ operations = {
 two_operads_op = ['+','-','*','/','^2','^3']
 
 
-# Function to generate a random constant
+# Function to generate a random constant between -10 and 10
 def random_constant():
-    return random.uniform(-10, 10)  # Example range
+    return random.uniform(-10, 10)
 
 def create_random_tree(depth=3):
     if depth == 0 or (depth != -1 and random.random() > 0.5):
@@ -222,12 +218,6 @@ def select_population(current_population, fitness_values, size=5):
         individual = tournament_selection(current_population,fitness_values)
         new_population.append(individual)
     return new_population
-def remove_duplicate_trees(population):
-    unique_trees = []
-    for tree in population:
-        if not any(are_trees_equivalent(tree, unique_tree) for unique_tree in unique_trees):
-            unique_trees.append(tree)
-    return unique_trees
 
 def remove_duplicate_trees_by_fitness(population, fitness_values):
     unique_trees = []
@@ -248,29 +238,23 @@ def print_population(population):
 
 
 
-# Example data
 DOWNSAMPLE_FACTOR = 4
-
+downsampler = nn.AvgPool2d(DOWNSAMPLE_FACTOR)
 #Import data
-data = []
-data_hr = list()
-root = ".\\data"
-files = [ os.path.join(root, item) for item in os.listdir(root) if os.path.isfile(os.path.join(root, item)) ]
-
-data = np.empty((MAX_DATA, 19))  #Allocate space before hand
-dataIndex = 0 
-for filename in files[1:]:
+data_raw = np.load('./data/trainData.npy')
+data = np.empty((MAX_DATA, 19))  #Allocate spacebefore hand
+dataIndex = 0
+for i in range(data_raw.shape[0]):
     if dataIndex > MAX_DATA: break
-    print(filename)
-    data_hr = np.load(filename)[1:]
-    data_lr = data_hr[:,::DOWNSAMPLE_FACTOR,::DOWNSAMPLE_FACTOR,:] #Substitute for average maybe
+    data_hr = data_raw[i]
+    data_lr = downsampler(torch.tensor(data_hr))
+    data_hr = np.transpose(data_hr,(0,2,3,1))
+    data_lr = np.transpose(data_lr,(0,2,3,1))
     for t in range(data_hr.shape[1]):
         data_iteration_hr = data_hr[t]
         data_iteration_lr = data_lr[t]
         for i in range(0,data_iteration_hr.shape[0]-DOWNSAMPLE_FACTOR):
             for j in range(0,data_iteration_hr.shape[1]-DOWNSAMPLE_FACTOR):
-                    #Que hago? referencio x por coordenadas o por pixels?... TODO
-                    if i%4==0 or j%4==0: continue
                     i_lr_equivalent = math.floor(i/(DOWNSAMPLE_FACTOR))
                     j_lr_equivalent = math.floor(j/(DOWNSAMPLE_FACTOR))
                         
@@ -279,8 +263,8 @@ for filename in files[1:]:
                     x1 = (i_lr_equivalent+1)/data_iteration_lr.shape[0]
                     y1 = (j_lr_equivalent+1)/data_iteration_lr.shape[0]
 
-                    x = i/data_iteration_hr.shape[0] #(i%4)/4 #
-                    y = j/data_iteration_hr.shape[0] #(j%4)/4 #
+                    x = i/data_iteration_hr.shape[0]
+                    y = j/data_iteration_hr.shape[0]
                         
                     u00 = data_iteration_lr[i_lr_equivalent][j_lr_equivalent][0]
                     u10 = data_iteration_lr[i_lr_equivalent+1][j_lr_equivalent][0]
@@ -294,7 +278,6 @@ for filename in files[1:]:
                     p10 = data_iteration_lr[i_lr_equivalent+1][j_lr_equivalent][2]
                     p01 = data_iteration_lr[i_lr_equivalent][j_lr_equivalent+1][2]
                     p11 = data_iteration_lr[i_lr_equivalent+1][j_lr_equivalent+1][2]
-
                     z = data_iteration_hr[i][j][2]
                     new_row = np.array((z, x,y,
                                 u00,u10,u01,u11,
@@ -305,75 +288,22 @@ for filename in files[1:]:
                     data[dataIndex] = new_row
                     dataIndex += 1
     del data_hr, data_lr
-
 data[:dataIndex]
-print(data.shape)
-#Normalize
-#LR_std = (data_lr - data_lr.min(axis=(1,2,3),keepdims=True))/ (data_lr.max(axis=(1,2,3),keepdims=True) - data_lr.min(axis=(1,2,3),keepdims=True))
-#HR_std = (data_hr - data_lr.min(axis=(1,2,3),keepdims=True))/ (data_lr.max(axis=(1,2,3),keepdims=True) - data_lr.min(axis=(1,2,3),keepdims=True))
-#data_lr = LR_std * (1 - 0) + 0
-#data_hr = HR_std * (1 - 0) + 0
-
-
-#Compare with interpolation
-"""
-data_interp_hr = torch.unsqueeze(torch.unsqueeze(torch.tensor(data_hr[:,:,2]),0),0)
-data_interp_lr = torch.unsqueeze(torch.unsqueeze(torch.tensor(data_lr[:,:,2]),0),0)
-
-linear = nn.Upsample(scale_factor=4, mode='bilinear')
-nearest = nn.Upsample(scale_factor=4, mode='nearest')
-bicubic = nn.Upsample(scale_factor=4, mode='bicubic')
-
-error_linear = (linear(data_interp_lr) - data_interp_hr) ** 2
-error_nn = (nearest(data_interp_lr) - data_interp_hr) ** 2 
-error_bicubic = (bicubic(data_interp_lr) - data_interp_hr) ** 2 
-
-print(bicubic(data_interp_lr).shape)
-print("Linear interpolation error: ",torch.mean(error_linear))
-print("NearestNeighbour interpolation error: ",torch.mean(error_nn))
-print("Bicubic interpolation error: ",torch.mean(error_bicubic))
-"""
-
-#Generate data
 
 # Parameters
 tree_initial_depth = 3
-population_size = 200
+population_size = 300
 N_SELECTION = round(population_size/3)
 DATA_SAMPLE = 50000 #Amount of data used to train each generation, which will be randomly sampled. We have to do this to deal with the limitations of the algorithm.
 max_generations = 100
-desired_fitness = 0.000000  # Set a threshold for desired fitness
-crossover_rate = 0.25
-mutation_rate = 0.25
+desired_fitness = -1  # Set a threshold for desired fitness
+crossover_rate = 0.3
+mutation_rate = 0.3
 # Create initial population
 population = [create_random_tree(tree_initial_depth) for _ in range(population_size)]
 best_individual = None
 best_fitness = float('inf')
 best_copies = 3
-
-
-if True:
-    #TEST custom tree bilinear
-    x1minusx0 = Node('-',Node('x1'),Node('x0'))
-    y1minusy0 = Node('-',Node('y1'),Node('y0'))
-    x1minusx = Node('-',Node('x1'),Node('x'))
-    xminusx0 = Node('-',Node('x'),Node('x0'))
-    y1minusy = Node('-',Node('y1'),Node('y'))
-    yminusy0 = Node('-',Node('y'),Node('y0'))
-    normDenominator = Node('*',x1minusx0,y1minusy0)
-    w00 = Node('*',x1minusx,y1minusy)
-    w01 = Node('*',x1minusx,yminusy0)
-    w10 = Node('*',xminusx0,y1minusy)
-    w11 = Node('*',xminusx0,yminusy0)
-    wq00 = Node('*',Node('P00'),w00)
-    wq10 = Node('*',Node('P10'),w10)
-    wq01 = Node('*',Node('P01'),w01)
-    wq11 = Node('*',Node('P11'),w11)
-    sum = Node('+',wq00,Node('+',wq10,Node('+',wq01, wq11)))
-    bilinearTree = Node('/',sum,normDenominator)
-    population.append(bilinearTree)
-
-
 
 
 for generation in tqdm(range(max_generations), desc="Optimizing...", ascii=False, ncols=64):
@@ -396,11 +326,7 @@ for generation in tqdm(range(max_generations), desc="Optimizing...", ascii=False
     if best_fitness <= desired_fitness:
         print(f"Desired fitness level reached at generation {generation}")
         break
-
-    #Inform of average depth
-    #depths = [tree_depth(individual) for individual in population]
-    #print("Average depth = ", np.mean(depths), "Max depth = ", np.max(depths), "Min depth = ", np.min(depths), )
-
+    
     # Selection of N best individuals
     new_population = select_population(population, fitness_values, size = N_SELECTION)
     #Explicitly include best individual
@@ -433,13 +359,8 @@ for generation in tqdm(range(max_generations), desc="Optimizing...", ascii=False
 
     population = new_population
 
-    #Pruning TODO Branches that don't change in a significant way the fitness value can be potencially pruned.
-
-
-
 print("Fitness: ",fitness(best_individual,data,printPred=False))
 print("Best individual:", best_individual)
 print("Best fitness:", best_fitness)
-print_tree(best_individual)
 print(tree_to_equation(best_individual))
 
