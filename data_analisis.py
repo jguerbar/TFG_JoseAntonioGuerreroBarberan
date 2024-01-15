@@ -2,17 +2,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-#Import data
-"""data_hr = list()
-root = ".\\data"
-files = [ os.path.join(root, item) for item in os.listdir(root) if os.path.isfile(os.path.join(root, item)) ]
-for filename in files[1:]:
-    print(filename)
-    data_hr.append(np.load(filename)[1:321]) #Some sims have more points, discarding them
-data_hr = np.array(data_hr)
-"""
+
 #Load data and check shape
-data_hr = np.load('allData.npy')
+data_hr = np.load('data.npy')
 print(data_hr.shape)
 
 # Calculating the statistics for each N and each channel
@@ -54,5 +46,5 @@ for n in range(data_hr.shape[0]):
         ax.set_xlabel('Value')
         ax.set_ylabel('Frequency')
 
-    plt.savefig("./temp/"+str(n+1)+".png")
+    plt.savefig("./data_distribution/"+str(n+1)+".png")
     plt.close()
