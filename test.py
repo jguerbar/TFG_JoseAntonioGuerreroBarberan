@@ -34,8 +34,8 @@ physics_loss = Navier_Stokes_informed_loss(rho=1, mu=0.00001, dt=1/32,dx=1/255,d
 #Interpolators
 downsampler = nn.AvgPool2d(UPSAMPLE_FACTOR)
 bicubic = nn.Upsample(scale_factor=UPSAMPLE_FACTOR, mode='bicubic')
-"""
-#Interpolation comparison losses
+
+#Interpolation comparison
 for data_y in [data]:
     errorLoss_bicubic = 0
     lphysicsInterp = 0
@@ -62,7 +62,7 @@ for data_y in [data]:
 
     print(f'BicubicMSE: {errorLoss_bicubic:.2e}, BicubicMaxMSE: {max_error:.2e},BicubicPhysicsLoss: {lphysicsInterp:.2e}')
     df.loc[len(df)] = ['Bicubic',errorLoss_bicubic,max_error,lphysicsInterp]
-"""
+
 for m in range(len(savedModels)):
     savedModel = savedModels[m]
     modelName = savedModel[0]
